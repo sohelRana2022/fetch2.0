@@ -21,7 +21,6 @@ os.makedirs(DOWNLOAD_FOLDER, exist_ok=True)
 # FFmpeg path for Railway/Linux
 FFMPEG_DIR = '/usr/bin'  # Railway/Linux system ffmpeg location
 
-
 # Global dictionary to track tasks
 tasks = {}
 
@@ -35,20 +34,19 @@ def background_download(task_id, url, quality, output_template, ffmpeg_dir=FFMPE
                 p = d.get('_percent_str', '0%').replace('%', '')
                 s = d.get('_speed_str', 'N/A')
                 e = d.get('_eta_str', 'N/A')
-                tasks[task_id].update({'status': 'downloading','progress': p,'speed': s,'eta': e})
+                tasks[task_id].update({'status': 'downloading', 'progress': p, 'speed': s, 'eta': e})
             elif d['status'] == 'finished':
-                tasks[task_id].update({'status': 'processing','progress': '100'})
+                tasks[task_id].update({'status': 'processing', 'progress': '100'})
 
-  ydl_opts = {
-    'outtmpl': output_template,
-    'nocheckcertificate': True,
-    'prefer_ffmpeg': True,
-    'ffmpeg_location': FFMPEG_DIR,  # <- important
-    'merge_output_format': 'mp4',
-    'progress_hooks': [progress_hook],
-    'quiet': True
-}
-
+        ydl_opts = {
+            'outtmpl': output_template,
+            'nocheckcertificate': True,
+            'prefer_ffmpeg': True,
+            'ffmpeg_location': ffmpeg_dir,
+            'merge_output_format': 'mp4',
+            'progress_hooks': [progress_hook],
+            'quiet': True
+        }
 
         if quality == 'mp3':
             ydl_opts.update({
@@ -69,7 +67,7 @@ def background_download(task_id, url, quality, output_template, ffmpeg_dir=FFMPE
 
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             ydl.download([url])
-            
+
         tasks[task_id]['status'] = 'finished'
     except Exception as e:
         tasks[task_id]['status'] = 'error'
@@ -92,21 +90,24 @@ def search_video():
     page_token = data.get('pageToken')
     if not query:
         return jsonify({'error': 'No query provided'}), 400
-
     try:
         search_url = "https://www.googleapis.com/youtube/v3/search"
-        params = {'part':'snippet','maxResults':10,'q':query,'type':'video','key':YOUTUBE_API_KEY}
-        if page_token: params['pageToken'] = page_token
+        params = {'part': 'snippet', 'maxResults': 10, 'q': query, 'type': 'video', 'key': YOUTUBE_API_KEY}
+        if page_token:
+            params['pageToken'] = page_token
         response = requests.get(search_url, params=params)
         data = response.json()
-        
+
         results = []
         for item in data.get('items', []):
             if item['id'].get('kind') == 'youtube#video':
                 video_id = item['id']['videoId']
-                results.append({'id': video_id,'title': item['snippet']['title'],
-                                'thumbnail': item['snippet']['thumbnails']['high']['url'],
-                                'url': f"https://www.youtube.com/watch?v={video_id}"})
+                results.append({
+                    'id': video_id,
+                    'title': item['snippet']['title'],
+                    'thumbnail': item['snippet']['thumbnails']['high']['url'],
+                    'url': f"https://www.youtube.com/watch?v={video_id}"
+                })
         return jsonify({'results': results, 'nextPageToken': data.get('nextPageToken')})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -115,7 +116,8 @@ def search_video():
 def get_suggestions():
     data = request.json
     query = data.get('query')
-    if not query: return jsonify({'results': []})
+    if not query:
+        return jsonify({'results': []})
     try:
         url = f"http://suggestqueries.google.com/complete/search?client=firefox&ds=yt&q={query}"
         response = requests.get(url)
@@ -129,17 +131,24 @@ def get_suggestions():
 def get_info():
     data = request.json
     url = data.get('url')
-    if not url or url == 'undefined': return jsonify({'error': 'No URL provided'}), 400
+    if not url or url == 'undefined':
+        return jsonify({'error': 'No URL provided'}), 400
     try:
         with yt_dlp.YoutubeDL({'quiet': True}) as ydl:
             info = ydl.extract_info(url, download=False)
-            formats = [{'id':'mp3','label':'Audio Only (MP3)'},
-                       {'id':'best_mp4','label':'Best Quality (MP4)'},
-                       {'id':'1080p','label':'1080p (MP4)'},
-                       {'id':'720p','label':'720p (MP4)'}]
-            return jsonify({'title': info.get('title'),'thumbnail': info.get('thumbnail'),
-                            'duration': info.get('duration'),'formats': formats,
-                            'original_url': url})
+            formats = [
+                {'id': 'mp3', 'label': 'Audio Only (MP3)'},
+                {'id': 'best_mp4', 'label': 'Best Quality (MP4)'},
+                {'id': '1080p', 'label': '1080p (MP4)'},
+                {'id': '720p', 'label': '720p (MP4)'}
+            ]
+            return jsonify({
+                'title': info.get('title'),
+                'thumbnail': info.get('thumbnail'),
+                'duration': info.get('duration'),
+                'formats': formats,
+                'original_url': url
+            })
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
@@ -147,14 +156,22 @@ def get_info():
 def download_video():
     data = request.json
     url = data.get('url')
-    if not url or url == 'undefined': return jsonify({'error': 'Invalid URL provided'}), 400
+    if not url or url == 'undefined':
+        return jsonify({'error': 'Invalid URL provided'}), 400
     quality = data.get('quality', 'best_mp4')
-    
+
     file_id = str(uuid.uuid4())
     output_template = os.path.join(DOWNLOAD_FOLDER, f"{file_id}.%(ext)s")
 
-    tasks[file_id] = {'id': file_id,'status': 'pending','progress': '0',
-                       'speed': '0','eta': '0','quality': quality,'file_id': file_id}
+    tasks[file_id] = {
+        'id': file_id,
+        'status': 'pending',
+        'progress': '0',
+        'speed': '0',
+        'eta': '0',
+        'quality': quality,
+        'file_id': file_id
+    }
 
     thread = threading.Thread(target=background_download, args=(file_id, url, quality, output_template, FFMPEG_DIR))
     thread.start()
@@ -163,16 +180,20 @@ def download_video():
 @app.route('/api/get_file/<task_id>')
 def get_file(task_id):
     task = tasks.get(task_id)
-    if not task or task['status'] != 'finished': return jsonify({'error': 'File not ready or task not found'}), 404
+    if not task or task['status'] != 'finished':
+        return jsonify({'error': 'File not ready or task not found'}), 404
 
-    final_ext = 'mp3' if task['quality']=='mp3' else 'mp4'
+    final_ext = 'mp3' if task['quality'] == 'mp3' else 'mp4'
     file_path = os.path.join(DOWNLOAD_FOLDER, f"{task['file_id']}.{final_ext}")
-    if not os.path.exists(file_path): return jsonify({'error':'File not found on server'}), 404
+    if not os.path.exists(file_path):
+        return jsonify({'error': 'File not found on server'}), 404
 
     @after_this_request
     def remove_file(response):
-        try: os.remove(file_path)
-        except Exception as e: print(f"Error removing file: {e}")
+        try:
+            os.remove(file_path)
+        except Exception as e:
+            print(f"Error removing file: {e}")
         return response
 
     return send_file(file_path, as_attachment=True, download_name=f"download_{task_id}.{final_ext}")
